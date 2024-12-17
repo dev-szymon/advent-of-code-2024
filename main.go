@@ -10,6 +10,7 @@ import (
 	"github.com/dev-szymon/advent-of-code/day4"
 	"github.com/dev-szymon/advent-of-code/day5"
 	"github.com/dev-szymon/advent-of-code/day6"
+	"github.com/dev-szymon/advent-of-code/day7"
 )
 
 type Solution interface {
@@ -25,6 +26,7 @@ func main() {
 		4: day4.NewSolution("day4/input.txt"),
 		5: day5.NewSolution("day5/input.txt"),
 		6: day6.NewSolution("day6/input.txt"),
+		7: day7.NewSolution("day7/input.txt"),
 	}
 
 	for day := 1; day <= len(solutions); day++ {
