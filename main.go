@@ -24,7 +24,7 @@ func main() {
 		3: day3.NewSolution("day3/input.txt"),
 		4: day4.NewSolution("day4/input.txt"),
 		5: day5.NewSolution("day5/input.txt"),
-		6: day6.NewSolution("day6/input_test.txt"),
+		6: day6.NewSolution("day6/input.txt"),
 	}
 
 	for day := 1; day <= len(solutions); day++ {

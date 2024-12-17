@@ -7,9 +7,23 @@ import (
 	"os"
 )
 
+type matrix [][]rune
+
+func (m matrix) isOutOfBounds(l location) bool {
+	y, x := l[0], l[1]
+	if y < 0 || y >= len(m) {
+		return true
+	}
+
+	if x < 0 || x >= len(m[y]) {
+		return true
+	}
+	return false
+}
+
 type puzzle struct {
-	matrix [][]rune
-	start  [2]int
+	matrix matrix
+	start  step
 }
 
 func NewSolution(filename string) *puzzle {
@@ -24,12 +38,12 @@ func NewSolution(filename string) *puzzle {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
-
 	for scanner.Scan() {
 		row := []rune{}
 		for x, object := range scanner.Text() {
 			if object == '^' {
-				p.start = [2]int{len(p.matrix), x}
+
+				p.start = step{y: len(p.matrix), x: x, direction: top}
 			}
 			row = append(row, object)
 		}
@@ -46,6 +60,32 @@ const (
 	left
 )
 
+type location = [2]int
+
+type step struct {
+	y         int
+	x         int
+	direction int
+}
+
+func (s *step) next() step {
+	nextY, nextX := s.y+directions[s.direction][0], s.x+directions[s.direction][1]
+	return step{
+		y:         nextY,
+		x:         nextX,
+		direction: s.direction,
+	}
+}
+
+func (s *step) turn(prevDirection int) step {
+	nextDirection := nextDirections[prevDirection]
+	return step{
+		y:         s.y,
+		x:         s.x,
+		direction: nextDirection,
+	}
+}
+
 var directions = map[int][2]int{
 	top:    {-1, 0},
 	right:  {0, 1},
@@ -59,102 +99,87 @@ var nextDirections = map[int]int{
 	left:   top,
 }
 
-func walk(path [][2]int, matrix [][]rune, direction int) [][2]int {
-	y, x := path[len(path)-1][0], path[len(path)-1][1]
+func findWayOut(path []step, matrix [][]rune) []step {
+	currStep := path[len(path)-1]
+	y, x := currStep.y, currStep.x
 	if y < 0 || y > len(matrix)-1 || x < 0 || x > len(matrix[y])-1 {
 		return path[:len(path)-1]
 	}
 	object := matrix[y][x]
-	nextDirection := direction
 	if object == '#' {
-		nextDirection = nextDirections[direction]
-		stepBackPath := path[:len(path)-1]
-		nextY, nextX := stepBackPath[len(stepBackPath)-1][0]+directions[nextDirection][0], stepBackPath[len(stepBackPath)-1][1]+directions[nextDirection][1]
-		stepBackPath = append(stepBackPath, [2]int{nextY, nextX})
+		poppedSteps := path[:len(path)-1]
+		nextStep := poppedSteps[len(poppedSteps)-1].turn(currStep.direction)
+		path = append(poppedSteps, nextStep)
 
-		return walk(stepBackPath, matrix, nextDirection)
+		return findWayOut(path, matrix)
 	}
 
-	nextY, nextX := y+directions[nextDirection][0], x+directions[nextDirection][1]
-	nextPath := append(path, [2]int{nextY, nextX})
-	return walk(nextPath, matrix, nextDirection)
+	nextStep := currStep.next()
+	path = append(path, nextStep)
+	return findWayOut(path, matrix)
 }
 
-func walkTwo(path [][2]int, matrix [][]rune, direction int, newObstacles [][2]int, turns [][2]int) [][2]int {
-	y, x := path[len(path)-1][0], path[len(path)-1][1]
-	if y < 0 || y > len(matrix)-1 || x < 0 || x > len(matrix[y])-1 {
-		return newObstacles
-	}
-	object := matrix[y][x]
-	nextDirection := direction
-	if object == '#' {
-		nextDirection = nextDirections[direction]
-		stepBackPath := path[:len(path)-1]
-		nextY, nextX := stepBackPath[len(stepBackPath)-1][0]+directions[nextDirection][0], stepBackPath[len(stepBackPath)-1][1]+directions[nextDirection][1]
-		nextStep := [2]int{nextY, nextX}
-		stepBackPath = append(stepBackPath, nextStep)
-
-		nextTurns := [][2]int{}
-		if len(turns) == 2 {
-			var obstacleY, obstacleX int
-			if nextDirection == left || nextDirection == right {
-				obstacleY = nextY
-				if nextDirection == left {
-					obstacleX = turns[0][1] - 2
-				} else {
-					obstacleX = turns[0][1] + 1
-				}
-			} else {
-				obstacleX = nextX
-				if nextDirection == top {
-					obstacleY = turns[0][1] - 1
-				} else {
-					obstacleY = turns[0][1] + 1
-				}
-			}
-
-			newObstacles = append(newObstacles, [2]int{obstacleY, obstacleX})
-		} else {
-			nextTurns = append(turns, [2]int{nextY, nextX})
-		}
-		return walkTwo(stepBackPath, matrix, nextDirection, newObstacles, nextTurns)
+func checkLoop(steps []step, matrix matrix, additionalObstacle location, seen map[step]int) bool {
+	currStep := steps[len(steps)-1]
+	if matrix.isOutOfBounds(location{currStep.y, currStep.x}) || matrix.isOutOfBounds(additionalObstacle) {
+		return false
 	}
 
-	nextY, nextX := y+directions[nextDirection][0], x+directions[nextDirection][1]
-	nextPath := append(path, [2]int{nextY, nextX})
+	if matrix[additionalObstacle[0]][additionalObstacle[1]] == '#' || matrix[additionalObstacle[0]][additionalObstacle[1]] == '^' {
+		return false
+	}
 
-	return walkTwo(nextPath, matrix, nextDirection, newObstacles, turns)
+	count, ok := seen[currStep]
+	if ok && count > 1 {
+		return true
+	}
+
+	currY, currX := currStep.y, currStep.x
+	if matrix[currY][currX] == '#' || (currY == additionalObstacle[0] && currX == additionalObstacle[1]) {
+		poppedSteps := steps[:len(steps)-1]
+		nextStep := poppedSteps[len(poppedSteps)-1].turn(currStep.direction)
+		steps = append(poppedSteps, nextStep)
+		seen[currStep]++
+		return checkLoop(steps, matrix, additionalObstacle, seen)
+	}
+
+	nextY, nextX := currY+directions[currStep.direction][0], currX+directions[currStep.direction][1]
+	nextStep := step{
+		y:         nextY,
+		x:         nextX,
+		direction: currStep.direction,
+	}
+	steps = append(steps, nextStep)
+	seen[currStep]++
+	return checkLoop(steps, matrix, additionalObstacle, seen)
 }
 
 func (p *puzzle) Part1() (string, error) {
-	path := walk([][2]int{p.start}, p.matrix, top)
+	path := findWayOut([]step{{y: p.start.y, x: p.start.x, direction: top}}, p.matrix)
 
-	uniqueLocations := map[[2]int]bool{}
+	uniqueLocations := map[location]bool{}
 	for _, step := range path {
-		uniqueLocations[step] = true
+		uniqueLocations[location{step.y, step.x}] = true
 	}
 
 	return fmt.Sprintf("%d", len(uniqueLocations)), nil
 }
 
 func (p *puzzle) Part2() (string, error) {
-	newObstacles := walkTwo([][2]int{p.start}, p.matrix, top, [][2]int{}, [][2]int{})
+	path := findWayOut([]step{{y: p.start.y, x: p.start.x, direction: top}}, p.matrix)
 
-	obs := map[[2]int]bool{}
-	for _, o := range newObstacles {
-		obs[o] = true
+	uniqueLocations := map[location]bool{}
+	for _, step := range path {
+		uniqueLocations[location{step.y, step.x}] = true
 	}
-	fmt.Printf("%+v\n", newObstacles)
-	for y, row := range p.matrix {
-		for x, r := range row {
-			_, ok := obs[[2]int{y, x}]
-			if !ok {
-				fmt.Printf("%s", string(r))
-			} else {
-				fmt.Printf("%s", "O")
-			}
+
+	total := 0
+	for newObstacle := range uniqueLocations {
+		isLoop := checkLoop([]step{{y: p.start.y, x: p.start.x, direction: top}}, p.matrix, newObstacle, map[step]int{})
+		if isLoop {
+			total++
 		}
-		fmt.Printf("\n")
 	}
-	return fmt.Sprintf("%d", len(newObstacles)), nil
+
+	return fmt.Sprintf("%d", total), nil
 }
